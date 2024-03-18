@@ -1,0 +1,117 @@
+#include <stdio.h>
+#include <stdlib.h>
+
+// Estrutura para representar um processo
+struct Process {
+    char pid;               // Identificador do processo
+    int duration;           // Duração total do processo
+    int arrivalTime;        // Tempo de chegada do processo
+    int* ioTimes;           // Array dos tempos de I/O
+    int ioCount;            // Número de operações de I/O
+    int remainingTime;      // Tempo restante de execução do processo
+};
+
+// Função para executar um processo por um quantum
+void executeProcess(struct Process* process, int quantum, FILE* outputFile, FILE* ganttFile) {
+    int i;
+    fprintf(ganttFile, "|P%c", process->pid); // Marca início de execução do processo no gráfico de Gantt
+    process->remainingTime -= quantum;         // Reduz o tempo restante de execução pelo quantum
+
+    // Verifica se há operações de I/O a serem realizadas
+    for (i = 0; i < process->ioCount; i++) {
+        if (process->ioTimes[i] == process->duration - process->remainingTime) {
+            fprintf(outputFile, "#[evento] OPERACAO I/O <P%c>\n", process->pid); // Registra evento de I/O no arquivo de saída
+            fprintf(ganttFile, "|I/O|P%c", process->pid); // Marca operação de I/O no gráfico de Gantt
+        }
+    }
+
+    fprintf(ganttFile, "|"); // Marca fim de execução do processo no gráfico de Gantt
+}
+
+int main() {
+    int quantum;
+    printf("Informe o quantum: ");
+    scanf("%d", &quantum);
+
+    FILE* inputFile = fopen("entrada.txt", "r"); // Abre arquivo de entrada
+    if (inputFile == NULL) {
+        perror("Erro ao abrir o arquivo de entrada");
+        return 1;
+    }
+
+    int processCount;
+    fscanf(inputFile, "%d", &processCount); // Lê o número de processos do arquivo de entrada
+    struct Process* processes = (struct Process*)malloc(processCount * sizeof(struct Process)); // Aloca memória para os processos
+
+    // Lê os detalhes de cada processo do arquivo de entrada
+    for (int i = 0; i < processCount; i++) {
+        fscanf(inputFile, " %c %d %d", &processes[i].pid, &processes[i].duration, &processes[i].arrivalTime);
+
+        char c;
+        // Verifica se há tempos de I/O especificados para o processo
+        if ((c = fgetc(inputFile)) == ' ') {
+            processes[i].ioCount = 0;
+            processes[i].ioTimes = NULL;
+        } else {
+            ungetc(c, inputFile);
+            processes[i].ioCount = 0;
+            processes[i].ioTimes = (int*)malloc(processes[i].duration * sizeof(int));
+            // Lê os tempos de I/O do arquivo de entrada
+            while (fscanf(inputFile, ",%d", &processes[i].ioTimes[processes[i].ioCount]) == 1) {
+                processes[i].ioCount++;
+            }
+        }
+
+        processes[i].remainingTime = processes[i].duration; // Inicializa o tempo restante de execução do processo
+    }
+
+    fclose(inputFile); // Fecha o arquivo de entrada
+
+    FILE* outputFile = fopen("saida.txt", "w"); // Abre arquivo de saída
+    FILE* ganttFile = fopen("grafico.txt", "w"); // Abre arquivo de gráfico de Gantt
+    if (outputFile == NULL || ganttFile == NULL) {
+        perror("Erro ao abrir o arquivo de saida ou grafico");
+        return 1;
+    }
+
+    // Simulação do escalonamento dos processos
+    int currentTime = 0;
+    while (1) {
+        int processesRemaining = 0;
+
+        // Verifica se há processos restantes para execução
+        for (int i = 0; i < processCount; i++) {
+            if (processes[i].remainingTime > 0) {
+                processesRemaining = 1;
+                break;
+            }
+        }
+
+        if (!processesRemaining) {
+            break;
+        }
+
+        // Execução dos processos no tempo atual
+        for (int i = 0; i < processCount; i++) {
+            if (processes[i].arrivalTime <= currentTime && processes[i].remainingTime > 0) {
+                executeProcess(&processes[i], quantum, outputFile, ganttFile);
+            }
+        }
+
+        // Atualização do tempo atual e registro de eventos de chegada
+        currentTime++;
+    }
+
+    fclose(outputFile); // Fecha arquivo de saída
+    fclose(ganttFile); // Fecha arquivo de gráfico de Gantt
+
+    // Liberação de memória alocada dinamicamente
+    for (int i = 0; i < processCount; i++) {
+        if (processes[i].ioTimes != NULL) {
+            free(processes[i].ioTimes);
+        }
+    }
+    free(processes);
+
+    return 0;
+}
